@@ -1,58 +1,128 @@
 <?php
-// index.php
+require_once 'config.php';
 
-require_once 'header.php';
+// Ambil data kategori untuk filter
+try {
+    $stmt = $pdo->query("SELECT * FROM categories ORDER BY name");
+    $categories = $stmt->fetchAll();
+} catch(PDOException $e) {
+    $_SESSION['message'] = "Error: " . $e->getMessage();
+    $_SESSION['message_type'] = "danger";
+}
 
-// Get active listings
- $sql = "SELECT l.*, c.category_name, u.username 
-        FROM Listings l 
-        JOIN Categories c ON l.category_id = c.category_id 
-        JOIN Users u ON l.user_id = u.user_id 
-        WHERE l.status = 'aktif' 
-        ORDER BY l.end_time ASC 
-        LIMIT 12";
- $result = $conn->query($sql);
+// Query untuk mendapatkan semua barang yang sedang dilelang
+try {
+    $query = "SELECT l.*, u.username, c.name as category_name FROM listings l 
+              JOIN users u ON l.user_id = u.id 
+              JOIN categories c ON l.category_id = c.id 
+              WHERE l.status = 'aktif' AND l.end_time > NOW()";
+    
+    // Filter berdasarkan kategori jika dipilih
+    if (isset($_GET['category']) && !empty($_GET['category'])) {
+        $query .= " AND l.category_id = " . intval($_GET['category']);
+    }
+    
+    // Pencarian berdasarkan kata kunci
+    if (isset($_GET['search']) && !empty($_GET['search'])) {
+        $searchTerm = '%' . $_GET['search'] . '%';
+        $query .= " AND (l.title LIKE ? OR l.description LIKE ?)";
+    }
+    
+    $query .= " ORDER BY l.end_time ASC";
+    
+    $stmt = $pdo->prepare($query);
+    
+    if (isset($_GET['search']) && !empty($_GET['search'])) {
+        $stmt->execute([$searchTerm, $searchTerm]);
+    } else {
+        $stmt->execute();
+    }
+    
+    $listings = $stmt->fetchAll();
+} catch(PDOException $e) {
+    $_SESSION['message'] = "Error: " . $e->getMessage();
+    $_SESSION['message_type'] = "danger";
+}
 ?>
 
-<div class="hero">
-    <h2>Selamat Datang di AuctionIndo</h2>
-    <p>Platform lelang online terpercaya di Indonesia</p>
+<?php require_once 'header.php'; ?>
+
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="display-4">Barang Lelang Aktif</h1>
+        <p class="lead">Temukan barang impian Anda dengan harga terbaik</p>
+    </div>
 </div>
 
-<section class="featured-listings">
-    <h2>Lelang Sedang Berlangsung</h2>
-    <div class="listings-grid">
-        <?php if ($result->num_rows > 0): ?>
-            <?php while ($row = $result->fetch_assoc()): ?>
-                <div class="listing-card">
+<div class="row mb-4">
+    <div class="col">
+        <form method="GET" action="index.php" class="d-flex">
+            <input class="form-control me-2" type="search" name="search" placeholder="Cari barang..." value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>">
+            <select class="form-select me-2" name="category" style="max-width: 200px;">
+                <option value="">Semua Kategori</option>
+                <?php foreach ($categories as $category): ?>
+                    <option value="<?php echo $category['id']; ?>" <?php echo (isset($_GET['category']) && $_GET['category'] == $category['id']) ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars($category['name']); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <button class="btn btn-outline-primary" type="submit">Cari</button>
+        </form>
+    </div>
+</div>
+
+<div class="row">
+    <?php if (empty($listings)): ?>
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>Tidak ada barang lelang yang aktif saat ini.
+            </div>
+        </div>
+    <?php else: ?>
+        <?php foreach ($listings as $listing): ?>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100">
                     <?php
-                    // Get primary image for this listing
-                    $img_sql = "SELECT image_url FROM Listing_Images WHERE listing_id = ? LIMIT 1";
-                    $img_stmt = $conn->prepare($img_sql);
-                    $img_stmt->bind_param("i", $row['listing_id']);
-                    $img_stmt->execute();
-                    $img_result = $img_stmt->get_result();
-                    $image_url = $img_result->num_rows > 0 ? $img_result->fetch_assoc()['image_url'] : 'https://picsum.photos/seed/auction' . $row['listing_id'] . '/300/200.jpg';
-                    ?>
-                    <div class="listing-image">
-                        <img src="<?php echo $image_url; ?>" alt="<?php echo $row['title']; ?>">
-                    </div>
-                    <div class="listing-info">
-                        <h3><a href="item_details.php?id=<?php echo $row['listing_id']; ?>"><?php echo $row['title']; ?></a></h3>
-                        <p class="listing-category"><?php echo $row['category_name']; ?></p>
-                        <p class="listing-price">Harga Saat Ini: <?php echo formatPrice($row['current_price']); ?></p>
-                        <p class="listing-time"><?php echo timeRemaining($row['end_time']); ?></p>
-                        <p class="listing-seller">Penjual: <?php echo $row['username']; ?></p>
+                    // Ambil gambar utama
+                    $stmt = $pdo->prepare("SELECT image_url FROM listing_images WHERE listing_id = ? AND is_primary = 1 LIMIT 1");
+                    $stmt->execute([$listing['id']]);
+                    $primary_image = $stmt->fetch();
+                    
+                    if ($primary_image): ?>
+                        <img src="<?php echo $primary_image['image_url']; ?>" class="card-img-top item-image" alt="<?php echo htmlspecialchars($listing['title']); ?>">
+                    <?php else: ?>
+                        <img src="https://picsum.photos/seed/<?php echo $listing['id']; ?>/400/200.jpg" class="card-img-top item-image" alt="<?php echo htmlspecialchars($listing['title']); ?>">
+                    <?php endif; ?>
+                    <div class="card-body d-flex flex-column">
+                        <h5 class="card-title"><?php echo htmlspecialchars($listing['title']); ?></h5>
+                        <p class="card-text"><?php echo substr(htmlspecialchars($listing['description']), 0, 100) . '...'; ?></p>
+                        <div class="mt-auto">
+                            <p class="card-text">
+                                <small class="text-muted">Kategori: <?php echo htmlspecialchars($listing['category_name']); ?></small>
+                            </p>
+                            <p class="card-text">
+                                <small class="text-muted">Penjual: <?php echo htmlspecialchars($listing['username']); ?></small>
+                            </p>
+                            <p class="card-text">
+                                <strong>Harga Saat Ini:</strong> 
+                                <span class="text-success"><?php echo formatPrice($listing['current_price']); ?></span>
+                            </p>
+                            <p class="card-text">
+                                <small class="text-muted countdown" id="countdown-<?php echo $listing['id']; ?>">
+                                    <?php echo timeRemaining($listing['end_time']); ?>
+                                </small>
+                            </p>
+                            <a href="listing_details.php?id=<?php echo $listing['id']; ?>" class="btn btn-primary">Lihat Detail</a>
+                        </div>
                     </div>
                 </div>
-            <?php endwhile; ?>
-        <?php else: ?>
-            <p>Tidak ada lelang yang sedang berlangsung saat ini.</p>
-        <?php endif; ?>
-    </div>
-    <div class="view-all">
-        <a href="search.php" class="btn">Lihat Semua Barang</a>
-    </div>
-</section>
+            </div>
+            
+            <script>
+                updateCountdown('countdown-<?php echo $listing['id']; ?>', '<?php echo $listing['end_time']; ?>');
+            </script>
+        <?php endforeach; ?>
+    <?php endif; ?>
+</div>
 
 <?php require_once 'footer.php'; ?>

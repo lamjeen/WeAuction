@@ -1,71 +1,81 @@
 <?php
-// config.php
-
-// Database configuration
+// Konfigurasi database
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
-define('DB_NAME', 'auctionindo');
+define('DB_NAME', 'auction_db');
 
-// Create database connection
- $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-
-// Check connection
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
+// Membuat koneksi ke database
+try {
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME, DB_USER, DB_PASS);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    die("ERROR: Could not connect. " . $e->getMessage());
 }
 
-// Start session
+// Memulai session
 session_start();
 
-// Function to check if user is logged in
+// Fungsi helper
 function isLoggedIn() {
     return isset($_SESSION['user_id']);
 }
 
-// Function to check if user is admin
 function isAdmin() {
     return isset($_SESSION['is_admin']) && $_SESSION['is_admin'] == 1;
 }
 
-// Function to redirect to a page
-function redirect($page) {
-    header("Location: $page");
-    exit();
+function isBlocked() {
+    return isset($_SESSION['is_blocked']) && $_SESSION['is_blocked'] == 1;
 }
 
-// Function to display error message
-function showError($message) {
-    return "<div class='error-message'>$message</div>";
+function redirect($url) {
+    header("Location: $url");
+    exit;
 }
 
-// Function to display success message
-function showSuccess($message) {
-    return "<div class='success-message'>$message</div>";
-}
-
-// Function to format price
+// Format harga
 function formatPrice($price) {
-    return "Rp " . number_format($price, 0, ',', '.');
+    return 'Rp ' . number_format($price, 2, ',', '.');
 }
 
-// Function to calculate time remaining
-function timeRemaining($endTime) {
+// Format waktu
+function formatTime($datetime) {
+    return date('d M Y H:i', strtotime($datetime));
+}
+
+// Hitung waktu tersisa
+function timeRemaining($endtime) {
     $now = new DateTime();
-    $end = new DateTime($endTime);
+    $end = new DateTime($endtime);
     
     if ($now > $end) {
         return "Lelang telah berakhir";
     }
     
     $interval = $now->diff($end);
-    
-    if ($interval->d > 0) {
-        return $interval->d . " hari " . $interval->h . " jam lagi";
-    } elseif ($interval->h > 0) {
-        return $interval->h . " jam " . $interval->i . " menit lagi";
-    } else {
-        return $interval->i . " menit " . $interval->s . " detik lagi";
+    return $interval->days . " hari, " . $interval->h . " jam, " . $interval->i . " menit";
+}
+
+// Fungsi untuk upload gambar
+function uploadImage($file, $directory = 'uploads/') {
+    if (!is_dir($directory)) {
+        mkdir($directory, 0755, true);
     }
+    
+    $allowed = ['jpg', 'jpeg', 'png', 'gif'];
+    $filename = $file['name'];
+    $filetype = pathinfo($filename, PATHINFO_EXTENSION);
+    
+    if (in_array(strtolower($filetype), $allowed)) {
+        $newname = uniqid() . '.' . $filetype;
+        
+        if (move_uploaded_file($file['tmp_name'], $directory . $newname)) {
+            return $directory . $newname;
+        }
+    }
+    
+    return false;
 }
 ?>

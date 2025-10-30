@@ -1,85 +1,88 @@
 <?php
-// login.php
+require_once 'config.php';
 
-require_once 'header.php';
+// Jika user sudah login, redirect ke halaman utama
+if (isLoggedIn()) {
+    redirect('index.php');
+}
 
- $errors = [];
-
-// Process login form
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// Proses login
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = trim($_POST['username']);
     $password = $_POST['password'];
     
-    // Validation
-    if (empty($username)) {
-        $errors[] = "Username harus diisi";
-    }
-    
-    if (empty($password)) {
-        $errors[] = "Password harus diisi";
-    }
-    
-    // Authenticate user if no validation errors
-    if (empty($errors)) {
-        $sql = "SELECT user_id, username, password_hash, full_name, is_admin, is_blocked FROM Users WHERE username = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("s", $username);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows === 1) {
-            $user = $result->fetch_assoc();
+    if (empty($username) || empty($password)) {
+        $_SESSION['message'] = "Username dan password harus diisi";
+        $_SESSION['message_type'] = "danger";
+    } else {
+        try {
+            // Cari user berdasarkan username
+            $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
+            $stmt->execute([$username]);
             
-            // Check if account is blocked
-            if ($user['is_blocked']) {
-                $errors[] = "Akun Anda telah diblokir. Silakan hubungi admin.";
-            } elseif (password_verify($password, $user['password_hash'])) {
-                // Set session variables
-                $_SESSION['user_id'] = $user['user_id'];
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['full_name'] = $user['full_name'];
-                $_SESSION['is_admin'] = $user['is_admin'];
+            if ($stmt->rowCount() == 1) {
+                $user = $stmt->fetch();
                 
-                // Redirect to dashboard
-                redirect('dashboard.php');
+                // Verifikasi password
+                if (password_verify($password, $user['password_hash'])) {
+                    // Cek apakah user diblokir
+                    if ($user['is_blocked']) {
+                        $_SESSION['message'] = "Akun Anda telah diblokir. Silakan hubungi admin.";
+                        $_SESSION['message_type'] = "danger";
+                    } else {
+                        // Set session
+                        $_SESSION['user_id'] = $user['id'];
+                        $_SESSION['username'] = $user['username'];
+                        $_SESSION['full_name'] = $user['full_name'];
+                        $_SESSION['is_admin'] = $user['is_admin'];
+                        $_SESSION['is_blocked'] = $user['is_blocked'];
+                        
+                        $_SESSION['message'] = "Login berhasil! Selamat datang, " . $user['username'];
+                        $_SESSION['message_type'] = "success";
+                        redirect('index.php');
+                    }
+                } else {
+                    $_SESSION['message'] = "Password salah";
+                    $_SESSION['message_type'] = "danger";
+                }
             } else {
-                $errors[] = "Username atau password salah";
+                $_SESSION['message'] = "Username tidak ditemukan";
+                $_SESSION['message_type'] = "danger";
             }
-        } else {
-            $errors[] = "Username atau password salah";
+        } catch(PDOException $e) {
+            $_SESSION['message'] = "Error: " . $e->getMessage();
+            $_SESSION['message_type'] = "danger";
         }
     }
 }
 ?>
 
-<div class="form-container">
-    <h2>Login ke Akun Anda</h2>
-    
-    <?php if (!empty($errors)): ?>
-        <div class="error-messages">
-            <?php foreach ($errors as $error): ?>
-                <?php echo showError($error); ?>
-            <?php endforeach; ?>
+<?php require_once 'header.php'; ?>
+
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">Login</h4>
+            </div>
+            <div class="card-body">
+                <form action="login.php" method="post">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Login</button>
+                </form>
+                <div class="mt-3 text-center">
+                    <p>Belum punya akun? <a href="register.php">Daftar di sini</a></p>
+                </div>
+            </div>
         </div>
-    <?php endif; ?>
-    
-    <form action="login.php" method="post">
-        <div class="form-group">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" required>
-        </div>
-        
-        <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required>
-        </div>
-        
-        <div class="form-group">
-            <button type="submit" class="btn">Login</button>
-        </div>
-        
-        <p>Belum punya akun? <a href="register.php">Daftar di sini</a></p>
-    </form>
+    </div>
 </div>
 
 <?php require_once 'footer.php'; ?>
