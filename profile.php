@@ -106,6 +106,21 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 </form>
             </div>
         </div>
+
+        <!-- FITUR BARU: HAPUS AKUN -->
+        <div class="card mt-4 border-danger">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Hapus Akun Saya</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">Menghapus akun Anda akan menghapus semua data Anda secara permanen, termasuk profil, riwayat penawaran, dan semua barang lelang yang Anda miliki. Tindakan ini tidak dapat dibatalkan.</p>
+                <a href="delete_account.php" 
+                   class="btn btn-danger" 
+                   onclick="return confirm('Apakah Anda yakin ingin menghapus akun Anda secara permanen? Semua data Anda akan hilang selamanya.');">
+                    <i class="fas fa-trash-alt me-2"></i>Hapus Akun Saya
+                </a>
+            </div>
+        </div>
     </div>
 </div>
 
