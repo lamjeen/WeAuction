@@ -30,7 +30,7 @@ try {
     $stmt->execute([$listing_id]);
     $images = $stmt->fetchAll();
     
-    // Ambil riwayat penawaran
+    // Ambil riwayat penawaran, diurutkan dari yang tertinggi
     $stmt = $pdo->prepare("SELECT b.*, u.username FROM bids b JOIN users u ON b.user_id = u.id WHERE b.listing_id = ? ORDER BY b.bid_amount DESC");
     $stmt->execute([$listing_id]);
     $bids = $stmt->fetchAll();
@@ -87,7 +87,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['place_bid'])) {
             
             $_SESSION['message'] = "Penawaran berhasil!";
             $_SESSION['message_type'] = "success";
-            redirect("listing_details.php?id=$listing_id");
+            redirect("listing_details.php?id=$listing_id"); // Refresh untuk "real-time" update
         } catch(PDOException $e) {
             $_SESSION['message'] = "Error: " . $e->getMessage();
             $_SESSION['message_type'] = "danger";
@@ -134,22 +134,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['place_bid'])) {
                         <p><strong>Kategori:</strong> <?php echo htmlspecialchars($listing['category_name']); ?></p>
                         <p><strong>Penjual:</strong> <?php echo htmlspecialchars($listing['username']); ?></p>
                         <p><strong>Harga Awal:</strong> <?php echo formatPrice($listing['start_price']); ?></p>
-                        <p><strong>Harga Saat Ini:</strong> <span class="text-success"><?php echo formatPrice($listing['current_price']); ?></span></p>
+                        <p><strong>Harga Saat Ini:</strong> <span class="text-success fw-bold"><?php echo formatPrice($listing['current_price']); ?></span></p>
                         <p><strong>Waktu Akhir Lelang:</strong> <?php echo formatTime($listing['end_time']); ?></p>
                         <p><strong>Waktu Tersisa:</strong> <span class="countdown" id="countdown-<?php echo $listing['id']; ?>"><?php echo timeRemaining($listing['end_time']); ?></span></p>
                         <p><strong>Status:</strong> 
                             <?php
                             $statusClass = '';
                             switch($listing['status']) {
-                                case 'aktif':
-                                    $statusClass = 'bg-success';
-                                    break;
-                                case 'selesai':
-                                    $statusClass = 'bg-secondary';
-                                    break;
-                                case 'dibatalkan':
-                                    $statusClass = 'bg-danger';
-                                    break;
+                                case 'aktif': $statusClass = 'bg-success'; break;
+                                case 'selesai': $statusClass = 'bg-secondary'; break;
+                                case 'dibatalkan': $statusClass = 'bg-danger'; break;
                             }
                             ?>
                             <span class="badge <?php echo $statusClass; ?>"><?php echo ucfirst($listing['status']); ?></span>
@@ -159,13 +153,28 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['place_bid'])) {
                             <hr>
                             <h5>Form Penawaran</h5>
                             <form action="listing_details.php?id=<?php echo $listing_id; ?>" method="post">
-                                <div class="mb-3">
-                                    <label for="bid_amount" class="form-label">Jumlah Penawaran (Rp)</label>
-                                    <input type="number" class="form-control" id="bid_amount" name="bid_amount" step="0.01" min="<?php echo $listing['current_price'] + 0.01; ?>" required>
-                                    <div class="form-text">Minimal: <?php echo formatPrice($listing['current_price'] + 0.01); ?></div>
+                                <div class="d-grid gap-2">
+                                    <button type="submit" name="place_bid" value="1" class="btn btn-success">Tawar + Rp 50.000</button>
+                                    <button type="submit" name="place_bid" value="2" class="btn btn-primary">Tawar + Rp 100.000</button>
                                 </div>
-                                <button type="submit" name="place_bid" class="btn btn-primary">Ajukan Penawaran</button>
+                                <!-- Input tersembunyi untuk mengirim nilai bid_amount -->
+                                <input type="hidden" name="bid_amount" id="bid_amount_50k" value="<?php echo $listing['current_price'] + 50000; ?>">
+                                <input type="hidden" name="bid_amount" id="bid_amount_100k" value="<?php echo $listing['current_price'] + 100000; ?>">
                             </form>
+                            <script>
+                                // Update nilai bid_amount saat tombol ditekan
+                                document.querySelectorAll('button[name="place_bid"]').forEach(button => {
+                                    button.addEventListener('click', function() {
+                                        if (this.value == 1) {
+                                            document.getElementById('bid_amount_50k').name = 'bid_amount';
+                                            document.getElementById('bid_amount_100k').removeAttribute('name');
+                                        } else {
+                                            document.getElementById('bid_amount_100k').name = 'bid_amount';
+                                            document.getElementById('bid_amount_50k').removeAttribute('name');
+                                        }
+                                    });
+                                });
+                            </script>
                         <?php elseif (isLoggedIn() && $_SESSION['user_id'] == $listing['user_id']): ?>
                             <div class="alert alert-info">
                                 <i class="fas fa-info-circle me-2"></i>Ini adalah barang Anda.
@@ -206,16 +215,37 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['place_bid'])) {
                                     <th>Penawar</th>
                                     <th>Jumlah</th>
                                     <th>Waktu</th>
+                                    <th>Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($bids as $bid): ?>
+                                <?php 
+                                $is_latest_bid = true; // Flag untuk menandai tawaran terbaru
+                                foreach ($bids as $bid): 
+                                    // Cek apakah tawaran ini bisa dihapus (logika tampilan saja)
+                                    $can_delete = false;
+                                    if (isLoggedIn() && $bid['user_id'] == $_SESSION['user_id']) {
+                                        $time_diff = time() - strtotime($bid['created_at']);
+                                        if ($time_diff < 5 && $is_latest_bid) {
+                                            $can_delete = true;
+                                        }
+                                    }
+                                ?>
                                     <tr>
                                         <td><?php echo htmlspecialchars($bid['username']); ?></td>
                                         <td><?php echo formatPrice($bid['bid_amount']); ?></td>
-                                        <td><?php echo date('d M H:i', strtotime($bid['created_at'])); ?></td>
+                                        <!-- Perubahan: Menampilkan waktu dengan detik untuk memudahkan pengecekan -->
+                                        <td><?php echo date('d M H:i:s', strtotime($bid['created_at'])); ?></td>
+                                        <td>
+                                            <?php if ($can_delete): ?>
+                                                <a href="delete_bid.php?id=<?php echo $bid['id']; ?>&listing_id=<?php echo $listing_id; ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Apakah Anda yakin ingin menghapus tawaran ini?')">Hapus</a>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
-                                <?php endforeach; ?>
+                                <?php 
+                                    // Set flag ke false setelah iterasi pertama (tawaran tertinggi)
+                                    if($is_latest_bid) $is_latest_bid = false; 
+                                endforeach; ?>
                             </tbody>
                         </table>
                     </div>
